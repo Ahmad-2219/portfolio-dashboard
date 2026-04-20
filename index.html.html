@@ -174,18 +174,37 @@
     <div class="last-refresh" id="last-refresh">No file loaded</div>
   </div>
   <div class="topbar-right">
-    <button class="btn" onclick="document.getElementById('file-input').click()">↑ Load Excel</button>
-    <button class="btn btn-primary" onclick="exportManual()">↓ Save Notes</button>
-    <input type="file" id="file-input" accept=".xlsx,.xls" onchange="loadExcel(event)">
+    <div id="file-status-bloomberg" style="font-size:11px;font-family:var(--mono);color:var(--muted);display:none;"></div>
+    <div id="file-status-notes" style="font-size:11px;font-family:var(--mono);color:var(--muted);display:none;"></div>
+    <button class="btn" onclick="document.getElementById('file-input-bloomberg').click()" title="Upload Portfolio Data.xlsx from Bloomberg">↑ Bloomberg Data</button>
+    <button class="btn" onclick="document.getElementById('file-input-notes').click()" title="Upload Manual_Notes.xlsx">↑ Manual Notes</button>
+    <input type="file" id="file-input-bloomberg" accept=".xlsx,.xls" onchange="loadBloomberg(event)" style="display:none">
+    <input type="file" id="file-input-notes" accept=".xlsx,.xls" onchange="loadNotes(event)" style="display:none">
   </div>
 </div>
 
 <!-- Upload hint on empty state -->
 <div id="empty-state" style="display:flex; flex-direction:column; align-items:center; justify-content:center; height:calc(100vh - 57px); text-align:center;">
   <div style="font-size:48px; margin-bottom:16px; opacity:0.3;">📊</div>
-  <div style="font-size:20px; font-weight:500; margin-bottom:8px; color: var(--text);">Load your Bloomberg Excel</div>
-  <div style="color:var(--muted); margin-bottom:28px; font-size:13px;">Click "Load Excel" to import your Portfolio_Data.xlsx<br>Dashboard reads the <strong>Dashboard</strong> sheet automatically</div>
-  <button class="btn btn-primary" style="padding:12px 32px; font-size:14px;" onclick="document.getElementById('file-input').click()">↑ Load Excel File</button>
+  <div style="font-size:20px; font-weight:500; margin-bottom:8px; color:var(--text);">Load your files to start</div>
+  <div style="color:var(--muted); margin-bottom:28px; font-size:13px;">Upload both files from your shared OneDrive folder</div>
+  <div style="display:flex; gap:12px; flex-wrap:wrap; justify-content:center;">
+    <div style="background:var(--surface); border:1px solid var(--border); border-radius:12px; padding:24px 32px; width:220px;">
+      <div style="font-size:28px; margin-bottom:10px;">📈</div>
+      <div style="font-weight:600; margin-bottom:4px;">Bloomberg Data</div>
+      <div style="font-size:11px; color:var(--muted); margin-bottom:16px;">Portfolio Data.xlsx<br>Dashboard sheet</div>
+      <button class="btn btn-primary" style="width:100%;" onclick="document.getElementById('file-input-bloomberg').click()">↑ Upload</button>
+      <div id="es-bloomberg" style="font-size:10px; color:var(--up); margin-top:8px; font-family:var(--mono);"></div>
+    </div>
+    <div style="background:var(--surface); border:1px solid var(--border); border-radius:12px; padding:24px 32px; width:220px;">
+      <div style="font-size:28px; margin-bottom:10px;">📝</div>
+      <div style="font-weight:600; margin-bottom:4px;">Manual Notes</div>
+      <div style="font-size:11px; color:var(--muted); margin-bottom:16px;">Manual_Notes.xlsx<br>Optional but recommended</div>
+      <button class="btn" style="width:100%;" onclick="document.getElementById('file-input-notes').click()">↑ Upload</button>
+      <div id="es-notes" style="font-size:10px; color:var(--up); margin-top:8px; font-family:var(--mono);"></div>
+    </div>
+  </div>
+  <div style="margin-top:20px; font-size:11px; color:var(--muted);">Dashboard loads automatically once Bloomberg Data is uploaded</div>
 </div>
 
 <!-- MAIN DASHBOARD (hidden until file loaded) -->
@@ -273,8 +292,17 @@
     </div>
     <div class="modal-grid">
       <div class="modal-field">
-        <label>Internal Outlook (Q)</label>
+        <label>Current Outlook</label>
         <select id="modal-outlook">
+          <option value="">— No Rating —</option>
+          <option value="positive">▲ Positive</option>
+          <option value="neutral">◆ Neutral</option>
+          <option value="negative">▼ Negative</option>
+        </select>
+      </div>
+      <div class="modal-field">
+        <label>Prior Quarter Outlook</label>
+        <select id="modal-prev-outlook">
           <option value="">— No Rating —</option>
           <option value="positive">▲ Positive</option>
           <option value="neutral">◆ Neutral</option>
@@ -286,21 +314,31 @@
         <input type="date" id="modal-agm">
       </div>
       <div class="modal-field">
-        <label>Prior Quarter View</label>
-        <select id="modal-prev-outlook">
-          <option value="">— No Rating —</option>
-          <option value="positive">▲ Positive</option>
-          <option value="neutral">◆ Neutral</option>
-          <option value="negative">▼ Negative</option>
-        </select>
+        <label>Target Price</label>
+        <input type="number" id="modal-target" placeholder="Local currency">
       </div>
       <div class="modal-field">
-        <label>Target Price</label>
-        <input type="number" id="modal-target" placeholder="Optional">
+        <label>Conviction (1–5)</label>
+        <select id="modal-conviction">
+          <option value="">—</option>
+          <option value="1">1 — Low</option>
+          <option value="2">2</option>
+          <option value="3">3 — Medium</option>
+          <option value="4">4</option>
+          <option value="5">5 — High</option>
+        </select>
       </div>
       <div class="modal-field full">
-        <label>Investment Thesis / Notes</label>
-        <textarea id="modal-notes" placeholder="Enter investment thesis, key risks, catalysts..."></textarea>
+        <label>Investment Thesis</label>
+        <textarea id="modal-notes" placeholder="Bull case, key drivers..."></textarea>
+      </div>
+      <div class="modal-field full">
+        <label>Key Risks</label>
+        <textarea id="modal-risks" placeholder="What could go wrong..." style="min-height:60px;"></textarea>
+      </div>
+      <div class="modal-field full">
+        <label>Catalysts</label>
+        <textarea id="modal-catalysts" placeholder="Upcoming events, triggers..." style="min-height:60px;"></textarea>
       </div>
     </div>
     <div class="modal-actions">
@@ -312,8 +350,8 @@
 
 <script>
 // ── STATE ──────────────────────────────────────────────────────────────────
-let portfolio = [];      // parsed from Excel
-let manualData = {};     // { ric: { outlook, prev_outlook, agm, notes, target } }
+let portfolio = [];
+let manualData = {};
 let sortCol = null, sortDir = 1;
 let currentModalRic = null;
 
@@ -321,7 +359,7 @@ let currentModalRic = null;
 try { manualData = JSON.parse(localStorage.getItem('portfolio_manual') || '{}'); } catch(e) {}
 
 // ── EXCEL PARSING ──────────────────────────────────────────────────────────
-function loadExcel(e) {
+function loadBloomberg(e) {
   const file = e.target.files[0];
   if (!file) return;
   const reader = new FileReader();
@@ -329,16 +367,70 @@ function loadExcel(e) {
     try {
       const wb = XLSX.read(ev.target.result, { type: 'binary', cellDates: true });
       const ws = wb.Sheets['Dashboard'];
-      if (!ws) { alert('Sheet "Dashboard" not found in this file.'); return; }
+      if (!ws) { alert('Sheet "Dashboard" not found. Make sure you are uploading Portfolio Data.xlsx'); return; }
       parseSheet(ws);
-      document.getElementById('last-refresh').textContent = 'Last refresh: ' + new Date().toLocaleString();
+      const ts = new Date().toLocaleString();
+      document.getElementById('last-refresh').textContent = 'Bloomberg: ' + file.name + ' · ' + ts;
+      document.getElementById('file-status-bloomberg').style.display = 'block';
+      document.getElementById('file-status-bloomberg').textContent = '✓ ' + file.name;
+      const es = document.getElementById('es-bloomberg');
+      if (es) es.textContent = '✓ Loaded — ' + portfolio.length + ' stocks';
       document.getElementById('empty-state').style.display = 'none';
       document.getElementById('dashboard').style.display = 'block';
-    } catch(err) {
-      alert('Error reading file: ' + err.message);
-    }
+    } catch(err) { alert('Error reading Bloomberg file: ' + err.message); }
   };
   reader.readAsBinaryString(file);
+}
+
+function loadNotes(e) {
+  const file = e.target.files[0];
+  if (!file) return;
+  const reader = new FileReader();
+  reader.onload = function(ev) {
+    try {
+      const wb = XLSX.read(ev.target.result, { type: 'binary', cellDates: true });
+      const ws = wb.Sheets['Notes'];
+      if (!ws) { alert('Sheet "Notes" not found. Make sure you are uploading Manual_Notes.xlsx'); return; }
+      const rows = XLSX.utils.sheet_to_json(ws, { header: 1, defval: null });
+      // Parse notes — row 0 is header
+      for (let i = 1; i < rows.length; i++) {
+        const r = rows[i];
+        if (!r[0]) continue;
+        const ric = String(r[0]).trim();
+        manualData[ric] = {
+          outlook: r[4] ? String(r[4]).toLowerCase().trim() : '',
+          prev_outlook: r[5] ? String(r[5]).toLowerCase().trim() : '',
+          agm: r[6] ? fmtDateInput(r[6]) : '',
+          target: r[7] || '',
+          notes: r[8] || '',
+          risks: r[9] || '',
+          catalysts: r[10] || '',
+          conviction: r[11] || '',
+        };
+      }
+      saveManual();
+      document.getElementById('last-refresh').textContent += ' · Notes: ' + file.name;
+      document.getElementById('file-status-notes').style.display = 'block';
+      document.getElementById('file-status-notes').textContent = '✓ ' + file.name;
+      const es = document.getElementById('es-notes');
+      if (es) es.textContent = '✓ Loaded';
+      if (portfolio.length > 0) renderAll();
+    } catch(err) { alert('Error reading Notes file: ' + err.message); }
+  };
+  reader.readAsBinaryString(file);
+}
+
+function fmtDateInput(v) {
+  if (!v) return '';
+  if (v instanceof Date) {
+    const y = v.getFullYear(), m = String(v.getMonth()+1).padStart(2,'0'), d = String(v.getDate()).padStart(2,'0');
+    return y + '-' + m + '-' + d;
+  }
+  // Try to parse string dates like DD/MM/YYYY
+  const s = String(v);
+  const parts = s.split('/');
+  if (parts.length === 3) return parts[2] + '-' + parts[1].padStart(2,'0') + '-' + parts[0].padStart(2,'0');
+  return s;
 }
 
 function clean(v) {
@@ -776,7 +868,10 @@ function openModal(ric) {
   document.getElementById('modal-prev-outlook').value = m.prev_outlook || '';
   document.getElementById('modal-agm').value = m.agm || '';
   document.getElementById('modal-notes').value = m.notes || '';
+  document.getElementById('modal-risks').value = m.risks || '';
+  document.getElementById('modal-catalysts').value = m.catalysts || '';
   document.getElementById('modal-target').value = m.target || '';
+  document.getElementById('modal-conviction').value = m.conviction || '';
   document.getElementById('modal').classList.add('active');
 }
 
@@ -792,7 +887,10 @@ function saveModal() {
   manualData[currentModalRic].prev_outlook = document.getElementById('modal-prev-outlook').value;
   manualData[currentModalRic].agm = document.getElementById('modal-agm').value;
   manualData[currentModalRic].notes = document.getElementById('modal-notes').value;
+  manualData[currentModalRic].risks = document.getElementById('modal-risks').value;
+  manualData[currentModalRic].catalysts = document.getElementById('modal-catalysts').value;
   manualData[currentModalRic].target = document.getElementById('modal-target').value;
+  manualData[currentModalRic].conviction = document.getElementById('modal-conviction').value;
   saveManual();
   closeModal();
   renderTable();
