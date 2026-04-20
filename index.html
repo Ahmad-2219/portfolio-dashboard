@@ -7,6 +7,7 @@
 <script src="https://cdn.jsdelivr.net/npm/xlsx@0.18.5/dist/xlsx.full.min.js"></script>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/Chart.js/4.4.1/chart.umd.js"></script>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/d3/7.8.5/d3.min.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js"></script>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/topojson/3.0.2/topojson.min.js"></script>
 <link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;500&family=IBM+Plex+Sans:wght@300;400;500;600&display=swap" rel="stylesheet">
 <style>
@@ -182,6 +183,7 @@
     <button class="btn" onclick="document.getElementById('file-input-notes').click()" title="Upload Manual_Notes.xlsx">↑ Manual Notes</button>
     <input type="file" id="file-input-bloomberg" accept=".xlsx,.xls" onchange="loadBloomberg(event)" style="display:none">
     <input type="file" id="file-input-notes" accept=".xlsx,.xls" onchange="loadNotes(event)" style="display:none">
+    <button class="btn btn-primary" onclick="generatePDF()" title="Download PDF Report">↓ PDF Report</button>
   </div>
 </div>
 
@@ -1245,6 +1247,338 @@ function renderCoverage() {
           <td>${statusBadge(status, qText)}</td>
         </tr>`;
       }).join('');
+}
+
+
+// ── PDF REPORT ─────────────────────────────────────────────────────────────
+function generatePDF() {
+  if (!portfolio.length) { alert('Please upload Bloomberg data first.'); return; }
+  const { jsPDF } = window.jspdf;
+  const doc = new jsPDF({ orientation: 'portrait', unit: 'mm', format: 'a4' });
+  const W = 210, M = 14, CW = W - M * 2;
+  let y = 0;
+
+  // ── Helpers ──
+  const navy  = [6, 13, 31];
+  const gold  = [240, 180, 41];
+  const white = [255, 255, 255];
+  const lgray = [240, 243, 248];
+  const mgray = [100, 120, 150];
+  const dtext = [30, 45, 80];
+  const up    = [34, 197, 94];
+  const dn    = [239, 68, 68];
+
+  function setFont(size, style='normal', color=dtext) {
+    doc.setFontSize(size);
+    doc.setFont('helvetica', style);
+    doc.setTextColor(...color);
+  }
+  function rect(x, ry, w, h, color, radius=0) {
+    doc.setFillColor(...color);
+    if (radius) doc.roundedRect(x, ry, w, h, radius, radius, 'F');
+    else doc.rect(x, ry, w, h, 'F');
+  }
+  function line(ry, color=lgray) {
+    doc.setDrawColor(...color);
+    doc.setLineWidth(0.2);
+    doc.line(M, ry, W - M, ry);
+  }
+  function newPageIfNeeded(needed=20) {
+    if (y + needed > 280) {
+      doc.addPage();
+      y = 14;
+      // mini header on continuation pages
+      rect(0, 0, W, 10, navy);
+      setFont(7, 'normal', gold);
+      doc.text('RIMCO Investment — Portfolio Report (continued)', M, 7);
+      y = 16;
+    }
+  }
+
+  // ── COVER HEADER ──
+  rect(0, 0, W, 38, navy);
+  // Gold accent bar
+  rect(0, 38, W, 2, gold);
+  // Title
+  setFont(18, 'bold', white);
+  doc.text('Portfolio Monitor', M, 16);
+  setFont(9, 'normal', gold);
+  doc.text('RIMCO Investment', M, 23);
+  setFont(8, 'normal', [180, 200, 230]);
+  const now = new Date();
+  doc.text('Generated: ' + now.toLocaleDateString('en-GB', {day:'numeric',month:'long',year:'numeric'}) + '  |  ' + now.toLocaleTimeString('en-GB',{hour:'2-digit',minute:'2-digit'}), M, 30);
+  // Positions count top right
+  setFont(22, 'bold', white);
+  doc.text(String(portfolio.length), W - M - 20, 18, {align:'right'});
+  setFont(7, 'normal', [180,200,230]);
+  doc.text('POSITIONS', W - M, 18, {align:'right'});
+  y = 48;
+
+  // ── KPI CARDS ──
+  const totalVal = portfolio.reduce((s,x) => s+(x.inv_value||0), 0);
+  const withYTD  = portfolio.filter(x => x.ytd_chg !== null);
+  const avgYTD   = withYTD.length ? withYTD.reduce((s,x)=>s+(x.ytd_chg||0),0)/withYTD.length : 0;
+  const withDaily= portfolio.filter(x => x.daily_chg !== null);
+  const avgDaily = withDaily.length ? withDaily.reduce((s,x)=>s+(x.daily_chg||0),0)/withDaily.length : 0;
+  const countries= new Set(portfolio.map(x=>x.country)).size;
+  const kpis = [
+    { label:'Total AUM', value:'$'+(totalVal/1e6).toFixed(1)+'M' },
+    { label:'Avg YTD',   value:(avgYTD>0?'+':'')+avgYTD.toFixed(1)+'%', color: avgYTD>=0?up:dn },
+    { label:'Avg Daily', value:(avgDaily>0?'+':'')+avgDaily.toFixed(1)+'%', color: avgDaily>=0?up:dn },
+    { label:'Countries', value:String(countries) },
+  ];
+  const kw = (CW - 9) / 4;
+  kpis.forEach((k, i) => {
+    const kx = M + i*(kw+3);
+    rect(kx, y, kw, 18, lgray, 2);
+    setFont(7, 'normal', mgray);
+    doc.text(k.label.toUpperCase(), kx+4, y+6);
+    setFont(13, 'bold', k.color || navy);
+    doc.text(k.value, kx+4, y+14);
+  });
+  y += 24;
+
+  // ── SECTION: POSITIONS & RETURNS ──
+  rect(M, y, CW, 7, navy, 1);
+  setFont(8, 'bold', white);
+  doc.text('POSITIONS & RETURNS', M+4, y+5);
+  y += 10;
+
+  // Table header
+  const cols = [
+    {h:'Company',   w:42, x:M},
+    {h:'Country',   w:18, x:M+42},
+    {h:'Sector',    w:30, x:M+60},
+    {h:'Price',     w:16, x:M+90},
+    {h:'1D %',      w:14, x:M+106},
+    {h:'YTD %',     w:14, x:M+120},
+    {h:'MTD %',     w:14, x:M+134},
+    {h:'Inv ($M)',  w:16, x:M+148},
+  ];
+  rect(M, y, CW, 6, [220,228,240]);
+  setFont(6.5, 'bold', mgray);
+  cols.forEach(c => doc.text(c.h, c.x+1, y+4.2));
+  y += 6;
+
+  const sorted = [...portfolio].sort((a,b) => (b.ytd_chg||0)-(a.ytd_chg||0));
+  sorted.forEach((s, idx) => {
+    newPageIfNeeded(7);
+    if (idx % 2 === 0) rect(M, y, CW, 6, [248,250,253]);
+    setFont(6.5, 'normal', dtext);
+    doc.text((s.name||'').substring(0,20), cols[0].x+1, y+4.2);
+    doc.text(s.country||'', cols[1].x+1, y+4.2);
+    doc.text((s.sector||'').substring(0,16), cols[2].x+1, y+4.2);
+    doc.text(s.last_price != null ? s.last_price.toFixed(2) : '—', cols[3].x+1, y+4.2);
+    // 1D color
+    if (s.daily_chg != null) {
+      doc.setTextColor(...(s.daily_chg>=0?up:dn));
+      doc.text((s.daily_chg>0?'+':'')+s.daily_chg.toFixed(1)+'%', cols[4].x+1, y+4.2);
+    } else { setFont(6.5,'normal',mgray); doc.text('—', cols[4].x+1, y+4.2); }
+    // YTD color
+    if (s.ytd_chg != null) {
+      doc.setTextColor(...(s.ytd_chg>=0?up:dn));
+      doc.text((s.ytd_chg>0?'+':'')+s.ytd_chg.toFixed(1)+'%', cols[5].x+1, y+4.2);
+    } else { setFont(6.5,'normal',mgray); doc.text('—', cols[5].x+1, y+4.2); }
+    // MTD color
+    if (s.mtd_chg != null) {
+      doc.setTextColor(...(s.mtd_chg>=0?up:dn));
+      doc.text((s.mtd_chg>0?'+':'')+s.mtd_chg.toFixed(1)+'%', cols[6].x+1, y+4.2);
+    } else { setFont(6.5,'normal',mgray); doc.text('—', cols[6].x+1, y+4.2); }
+    setFont(6.5,'normal',dtext);
+    doc.text(s.inv_value ? '$'+(s.inv_value/1e6).toFixed(1)+'M' : '—', cols[7].x+1, y+4.2);
+    y += 6;
+  });
+  y += 4;
+
+  // ── SECTION: VALUATION MULTIPLES ──
+  newPageIfNeeded(60);
+  rect(M, y, CW, 7, navy, 1);
+  setFont(8, 'bold', white);
+  doc.text('VALUATION MULTIPLES', M+4, y+5);
+  y += 10;
+
+  const vcols = [
+    {h:'Company',      w:42, x:M},
+    {h:'Country',      w:18, x:M+42},
+    {h:'P/E (TTM)',    w:20, x:M+60},
+    {h:'P/E (Fwd)',    w:20, x:M+80},
+    {h:'EV/EBITDA',   w:22, x:M+100},
+    {h:'P/B',          w:16, x:M+122},
+    {h:'DY %',         w:16, x:M+138},
+    {h:'ROE %',        w:18, x:M+154},
+  ];
+  rect(M, y, CW, 6, [220,228,240]);
+  setFont(6.5, 'bold', mgray);
+  vcols.forEach(c => doc.text(c.h, c.x+1, y+4.2));
+  y += 6;
+
+  const vsorted = [...portfolio].sort((a,b) => (a.country+a.name).localeCompare(b.country+b.name));
+  vsorted.forEach((s, idx) => {
+    newPageIfNeeded(7);
+    if (idx % 2 === 0) rect(M, y, CW, 6, [248,250,253]);
+    setFont(6.5, 'normal', dtext);
+    const fv = v => v != null ? v.toFixed(1)+'x' : '—';
+    const fp = v => v != null ? v.toFixed(1)+'%' : '—';
+    doc.text((s.name||'').substring(0,20), vcols[0].x+1, y+4.2);
+    doc.text(s.country||'', vcols[1].x+1, y+4.2);
+    doc.text(fv(s.pe_curr), vcols[2].x+1, y+4.2);
+    doc.text(fv(s.pe_next), vcols[3].x+1, y+4.2);
+    doc.text(fv(s.ev_ebitda), vcols[4].x+1, y+4.2);
+    doc.text(fv(s.pb), vcols[5].x+1, y+4.2);
+    if (s.dy != null) {
+      doc.setTextColor(...gold);
+      doc.text(fp(s.dy), vcols[6].x+1, y+4.2);
+    } else { setFont(6.5,'normal',mgray); doc.text('—', vcols[6].x+1, y+4.2); }
+    setFont(6.5,'normal',dtext);
+    if (s.roe != null) {
+      doc.setTextColor(...(s.roe>=0?up:dn));
+      doc.text(fp(s.roe), vcols[7].x+1, y+4.2);
+    } else { setFont(6.5,'normal',mgray); doc.text('—', vcols[7].x+1, y+4.2); }
+    y += 6;
+  });
+  y += 4;
+
+  // ── SECTION: ANALYST VIEW ──
+  const ratedStocks = portfolio.filter(s => manualData[s.ric]?.outlook);
+  if (ratedStocks.length > 0) {
+    newPageIfNeeded(40);
+    rect(M, y, CW, 7, navy, 1);
+    setFont(8, 'bold', white);
+    doc.text('INTERNAL ANALYST VIEW', M+4, y+5);
+    y += 10;
+
+    const acols = [
+      {h:'Company',          w:42, x:M},
+      {h:'Country',          w:18, x:M+42},
+      {h:'Current Outlook',  w:28, x:M+60},
+      {h:'Prior Quarter',    w:28, x:M+88},
+      {h:'Target Price',     w:22, x:M+116},
+      {h:'Conviction',       w:20, x:M+138},
+    ];
+    rect(M, y, CW, 6, [220,228,240]);
+    setFont(6.5, 'bold', mgray);
+    acols.forEach(c => doc.text(c.h, c.x+1, y+4.2));
+    y += 6;
+
+    ratedStocks.forEach((s, idx) => {
+      newPageIfNeeded(7);
+      const m = manualData[s.ric] || {};
+      if (idx % 2 === 0) rect(M, y, CW, 6, [248,250,253]);
+      setFont(6.5, 'normal', dtext);
+      doc.text((s.name||'').substring(0,20), acols[0].x+1, y+4.2);
+      doc.text(s.country||'', acols[1].x+1, y+4.2);
+      // Outlook with color
+      const oc = m.outlook === 'positive' ? up : m.outlook === 'negative' ? dn : [180,140,0];
+      doc.setTextColor(...oc);
+      doc.text(m.outlook ? m.outlook.charAt(0).toUpperCase()+m.outlook.slice(1) : '—', acols[2].x+1, y+4.2);
+      const poc = m.prev_outlook === 'positive' ? up : m.prev_outlook === 'negative' ? dn : [180,140,0];
+      doc.setTextColor(...poc);
+      doc.text(m.prev_outlook ? m.prev_outlook.charAt(0).toUpperCase()+m.prev_outlook.slice(1) : '—', acols[3].x+1, y+4.2);
+      setFont(6.5,'normal',dtext);
+      doc.text(m.target ? String(m.target) : '—', acols[4].x+1, y+4.2);
+      doc.text(m.conviction ? m.conviction+'/5' : '—', acols[5].x+1, y+4.2);
+      y += 6;
+    });
+
+    // Thesis notes for rated stocks
+    const withNotes = ratedStocks.filter(s => manualData[s.ric]?.notes);
+    if (withNotes.length > 0) {
+      y += 4;
+      newPageIfNeeded(20);
+      setFont(7, 'bold', navy);
+      doc.text('Investment Thesis Notes', M, y);
+      y += 5;
+      withNotes.forEach(s => {
+        const m = manualData[s.ric];
+        newPageIfNeeded(14);
+        rect(M, y, CW, 5, lgray, 1);
+        setFont(6.5, 'bold', navy);
+        doc.text(s.name + ' (' + s.country + ')', M+2, y+3.5);
+        y += 5;
+        const lines = doc.splitTextToSize(m.notes, CW - 4);
+        const lh = lines.length * 4 + 4;
+        newPageIfNeeded(lh);
+        setFont(6.5, 'normal', dtext);
+        doc.text(lines, M+2, y+3);
+        y += lh;
+      });
+    }
+    y += 4;
+  }
+
+  // ── SECTION: AGM CALENDAR ──
+  const agmStocks = portfolio
+    .map(s => ({ ...s, agm: manualData[s.ric]?.agm }))
+    .filter(s => s.agm)
+    .map(s => ({ ...s, agmDate: new Date(s.agm) }))
+    .sort((a,b) => a.agmDate - b.agmDate);
+
+  if (agmStocks.length > 0) {
+    newPageIfNeeded(30);
+    rect(M, y, CW, 7, navy, 1);
+    setFont(8, 'bold', white);
+    doc.text('AGM CALENDAR', M+4, y+5);
+    y += 10;
+
+    const today = new Date();
+    const upcoming = agmStocks.filter(s => s.agmDate >= today);
+    const past = agmStocks.filter(s => s.agmDate < today);
+
+    if (upcoming.length) {
+      setFont(7, 'bold', navy);
+      doc.text('Upcoming', M, y); y += 5;
+      upcoming.forEach((s, idx) => {
+        newPageIfNeeded(7);
+        if (idx % 2 === 0) rect(M, y, CW, 6, [248,250,253]);
+        const days = Math.ceil((s.agmDate - today)/(1000*60*60*24));
+        setFont(6.5, 'normal', dtext);
+        doc.text(s.name.substring(0,24), M+1, y+4.2);
+        doc.text(s.country, M+65, y+4.2);
+        doc.text(s.agmDate.toLocaleDateString('en-GB',{day:'numeric',month:'short',year:'numeric'}), M+90, y+4.2);
+        doc.setTextColor(...(days <= 14 ? [240,180,41] : [34,197,94]));
+        doc.text(days+' days', M+130, y+4.2);
+        setFont(6.5,'normal',dtext);
+        const m = manualData[s.ric];
+        if (m?.outlook) {
+          const oc = m.outlook==='positive'?up:m.outlook==='negative'?dn:[180,140,0];
+          doc.setTextColor(...oc);
+          doc.text(m.outlook.charAt(0).toUpperCase()+m.outlook.slice(1), M+155, y+4.2);
+        }
+        y += 6;
+      });
+    }
+
+    if (past.length) {
+      y += 3;
+      newPageIfNeeded(10);
+      setFont(7, 'bold', mgray);
+      doc.text('Past AGMs', M, y); y += 5;
+      past.forEach((s, idx) => {
+        newPageIfNeeded(7);
+        if (idx % 2 === 0) rect(M, y, CW, 6, [248,250,253]);
+        setFont(6.5, 'normal', mgray);
+        doc.text(s.name.substring(0,24), M+1, y+4.2);
+        doc.text(s.country, M+65, y+4.2);
+        doc.text(s.agmDate.toLocaleDateString('en-GB',{day:'numeric',month:'short',year:'numeric'}), M+90, y+4.2);
+        y += 6;
+      });
+    }
+  }
+
+  // ── FOOTER on all pages ──
+  const pageCount = doc.internal.getNumberOfPages();
+  for (let i = 1; i <= pageCount; i++) {
+    doc.setPage(i);
+    rect(0, 290, W, 7, navy);
+    setFont(6.5, 'normal', [180,200,230]);
+    doc.text('RIMCO Investment — Confidential', M, 295);
+    doc.text('Page ' + i + ' of ' + pageCount, W-M, 295, {align:'right'});
+    doc.text('Generated ' + now.toLocaleDateString('en-GB'), W/2, 295, {align:'center'});
+  }
+
+  // ── SAVE ──
+  const dateStr = now.toLocaleDateString('en-GB').replace(/\//g,'-');
+  doc.save('RIMCO_Portfolio_Report_' + dateStr + '.pdf');
 }
 
 </script>
