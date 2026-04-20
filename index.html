@@ -216,6 +216,7 @@
       <div class="tab active" onclick="switchTab('overview')">Overview</div>
       <div class="tab" onclick="switchTab('holdings')">Holdings</div>
       <div class="tab" onclick="switchTab('agm')">AGM Calendar</div>
+      <div class="tab" onclick="switchTab('coverage')">Coverage Tracker</div>
     </div>
 
     <!-- OVERVIEW TAB -->
@@ -285,6 +286,62 @@
     <div id="tab-agm" class="tab-content">
       <div id="agm-content"></div>
     </div>
+    <!-- COVERAGE TAB -->
+    <div id="tab-coverage" class="tab-content">
+      <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:16px;flex-wrap:wrap;gap:10px;">
+        <div style="display:flex;gap:10px;flex-wrap:wrap;">
+          <input class="search-box" id="cov-search" placeholder="Search company, analyst, country..." oninput="filterCoverage()" style="width:260px;">
+          <select class="filter-select" id="cov-quarter" onchange="filterCoverage()">
+            <option value="1Q26">1Q26</option>
+            <option value="4Q25">4Q25</option>
+            <option value="3Q25">3Q25</option>
+            <option value="2Q25">2Q25</option>
+          </select>
+          <select class="filter-select" id="cov-analyst" onchange="filterCoverage()"><option value="">All Analysts</option></select>
+          <select class="filter-select" id="cov-country" onchange="filterCoverage()"><option value="">All Countries</option></select>
+          <select class="filter-select" id="cov-status" onchange="filterCoverage()">
+            <option value="">All Status</option>
+            <option value="done">Done</option>
+            <option value="pending">Pending</option>
+            <option value="results_out">Results Out</option>
+            <option value="out_of_coverage">Out of Coverage</option>
+            <option value="not_started">Not Started</option>
+          </select>
+        </div>
+        <div style="display:flex;gap:10px;align-items:center;">
+          <button class="btn" onclick="document.getElementById('file-input-coverage').click()">↑ Upload Coverage</button>
+          <input type="file" id="file-input-coverage" accept=".xlsx,.xls" onchange="loadCoverage(event)" style="display:none">
+          <span id="cov-count" style="font-size:11px;font-family:var(--mono);color:var(--muted);"></span>
+        </div>
+      </div>
+
+      <!-- Progress summary cards -->
+      <div id="cov-summary" style="display:grid;grid-template-columns:repeat(5,1fr);gap:12px;margin-bottom:20px;"></div>
+
+      <!-- Coverage table -->
+      <div class="table-wrap">
+        <div class="table-scroll">
+          <table>
+            <thead>
+              <tr>
+                <th>Company</th>
+                <th>Country</th>
+                <th>Primary</th>
+                <th>Secondary</th>
+                <th id="cov-qhead">Quarter Status</th>
+                <th>Status</th>
+              </tr>
+            </thead>
+            <tbody id="cov-body">
+              <tr><td colspan="6" style="text-align:center;padding:40px;color:var(--muted);">
+                Upload your Coverage Excel file using the button above
+              </td></tr>
+            </tbody>
+          </table>
+        </div>
+      </div>
+    </div>
+
   </div>
 </div>
 
@@ -1019,10 +1076,177 @@ function saveModal() {
 
 // ── TABS ───────────────────────────────────────────────────────────────────
 function switchTab(tab) {
-  document.querySelectorAll('.tab').forEach((t,i) => t.classList.toggle('active', ['overview','holdings','agm'][i] === tab));
+  const tabs = ['overview','holdings','agm','coverage'];
+  document.querySelectorAll('.tab').forEach((t,i) => t.classList.toggle('active', tabs[i] === tab));
   document.querySelectorAll('.tab-content').forEach(c => c.classList.remove('active'));
   document.getElementById('tab-' + tab).classList.add('active');
 }
+
+// ── COVERAGE TRACKER ───────────────────────────────────────────────────────
+let coverageData = [];
+const QUARTERS = ['2Q25','3Q25','4Q25','1Q26'];
+const Q_COL = { '2Q25': 5, '3Q25': 6, '4Q25': 7, '1Q26': 8 }; // 0-indexed
+
+function loadCoverage(e) {
+  const file = e.target.files[0];
+  if (!file) return;
+  const reader = new FileReader();
+  reader.onload = function(ev) {
+    try {
+      const wb = XLSX.read(ev.target.result, { type: 'binary' });
+      const ws = wb.Sheets['Coverage'];
+      if (!ws) { alert('Sheet "Coverage" not found.'); return; }
+      const rows = XLSX.utils.sheet_to_json(ws, { header: 1, defval: null });
+      coverageData = [];
+      for (let i = 3; i < rows.length; i++) {
+        const r = rows[i];
+        if (!r[2]) continue; // no company name
+        coverageData.push({
+          country: r[1] || '',
+          company: r[2] || '',
+          primary: r[3] || '',
+          secondary: r[4] || '',
+          q2_25: r[5] || '',
+          q3_25: r[6] || '',
+          q4_25: r[7] || '',
+          q1_26: r[8] || '',
+        });
+      }
+      populateCoverageFilters();
+      renderCoverage();
+    } catch(err) { alert('Error: ' + err.message); }
+  };
+  reader.readAsBinaryString(file);
+}
+
+function parseStatus(text) {
+  if (!text || text === '-' || text === '') return 'not_started';
+  const t = text.toLowerCase();
+  if (t.includes('out of coverage')) return 'out_of_coverage';
+  if ((t.includes('completed') || t.includes('done') || t.includes('sent to')) && !t.includes('to be')) return 'done';
+  if (t.includes('results out') && (t.includes('to be') || t.includes('expected'))) return 'results_out';
+  if (t.includes('results out') && !t.includes('to be')) return 'done';
+  if (t.includes('to be completed')) return 'pending';
+  if (t.includes('completed') || t.includes('done')) return 'done';
+  return 'pending';
+}
+
+function statusBadge(status, text) {
+  const cfg = {
+    done:           { label: '✓ Done',           bg: 'rgba(34,197,94,0.12)',  color: '#22c55e', border: 'rgba(34,197,94,0.3)' },
+    pending:        { label: '⏳ Pending',        bg: 'rgba(245,158,11,0.12)', color: '#f0b429', border: 'rgba(245,158,11,0.3)' },
+    results_out:    { label: '📋 Results Out',    bg: 'rgba(74,144,217,0.12)', color: '#4a90d9', border: 'rgba(74,144,217,0.3)' },
+    out_of_coverage:{ label: '— Out of Coverage', bg: 'rgba(90,114,153,0.1)',  color: '#5a7299', border: 'rgba(90,114,153,0.2)' },
+    not_started:    { label: '○ Not Started',     bg: 'transparent',           color: '#5a7299', border: 'rgba(90,114,153,0.2)' },
+  };
+  const c = cfg[status] || cfg.not_started;
+  const tooltip = text ? ` title="${String(text).replace(/"/g,'&quot;')}"` : '';
+  return `<span${tooltip} style="display:inline-flex;align-items:center;padding:3px 8px;border-radius:4px;font-size:10px;font-family:var(--mono);font-weight:600;background:${c.bg};color:${c.color};border:1px solid ${c.border};cursor:default;">${c.label}</span>`;
+}
+
+function getQText(row, q) {
+  const map = { '2Q25': row.q2_25, '3Q25': row.q3_25, '4Q25': row.q4_25, '1Q26': row.q1_26 };
+  return map[q] || '';
+}
+
+function populateCoverageFilters() {
+  const analysts = [...new Set(coverageData.flatMap(r => [r.primary, r.secondary]).filter(a => a && a !== '-'))].sort();
+  const countries = [...new Set(coverageData.map(r => r.country).filter(Boolean))].sort();
+  document.getElementById('cov-analyst').innerHTML = '<option value="">All Analysts</option>' + analysts.map(a => `<option>${a}</option>`).join('');
+  document.getElementById('cov-country').innerHTML = '<option value="">All Countries</option>' + countries.map(c => `<option>${c}</option>`).join('');
+}
+
+function filterCoverage() { renderCoverage(); }
+
+function renderCoverage() {
+  const q = document.getElementById('cov-quarter')?.value || '1Q26';
+  const search = (document.getElementById('cov-search')?.value || '').toLowerCase();
+  const fAnalyst = document.getElementById('cov-analyst')?.value || '';
+  const fCountry = document.getElementById('cov-country')?.value || '';
+  const fStatus = document.getElementById('cov-status')?.value || '';
+
+  document.getElementById('cov-qhead').textContent = q + ' Status';
+
+  let rows = coverageData.filter(r => {
+    const qText = getQText(r, q);
+    const status = parseStatus(qText);
+    if (fAnalyst && r.primary !== fAnalyst && r.secondary !== fAnalyst) return false;
+    if (fCountry && r.country !== fCountry) return false;
+    if (fStatus && status !== fStatus) return false;
+    if (search && !r.company.toLowerCase().includes(search) && !r.country.toLowerCase().includes(search) && !(r.primary||'').toLowerCase().includes(search)) return false;
+    return true;
+  });
+
+  document.getElementById('cov-count').textContent = rows.length + ' companies';
+
+  // Summary cards
+  const allForQ = coverageData.map(r => parseStatus(getQText(r, q)));
+  const counts = {
+    done: allForQ.filter(s => s === 'done').length,
+    pending: allForQ.filter(s => s === 'pending').length,
+    results_out: allForQ.filter(s => s === 'results_out').length,
+    not_started: allForQ.filter(s => s === 'not_started').length,
+    out_of_coverage: allForQ.filter(s => s === 'out_of_coverage').length,
+  };
+  const total = coverageData.length;
+  const donePct = total ? Math.round(counts.done / total * 100) : 0;
+
+  document.getElementById('cov-summary').innerHTML = `
+    <div class="kpi" style="border-color:rgba(34,197,94,0.3);">
+      <div class="kpi-label">Done</div>
+      <div class="kpi-value up">${counts.done}</div>
+      <div class="kpi-sub">${donePct}% complete</div>
+    </div>
+    <div class="kpi" style="border-color:rgba(74,144,217,0.3);">
+      <div class="kpi-label">Results Out</div>
+      <div class="kpi-value" style="color:var(--accent2)">${counts.results_out}</div>
+      <div class="kpi-sub">Awaiting note</div>
+    </div>
+    <div class="kpi" style="border-color:rgba(245,158,11,0.3);">
+      <div class="kpi-label">Pending</div>
+      <div class="kpi-value warn" style="color:var(--warn)">${counts.pending}</div>
+      <div class="kpi-sub">In progress</div>
+    </div>
+    <div class="kpi">
+      <div class="kpi-label">Not Started</div>
+      <div class="kpi-value" style="color:var(--muted)">${counts.not_started}</div>
+      <div class="kpi-sub">No results yet</div>
+    </div>
+    <div class="kpi">
+      <div class="kpi-label">Out of Coverage</div>
+      <div class="kpi-value" style="color:var(--muted)">${counts.out_of_coverage}</div>
+      <div class="kpi-sub">Dropped</div>
+    </div>`;
+
+  // Progress bar
+  const progressHtml = `
+    <div style="height:4px;background:var(--border);border-radius:2px;margin-bottom:20px;overflow:hidden;">
+      <div style="height:100%;width:${donePct}%;background:var(--up);border-radius:2px;transition:width 0.5s;"></div>
+    </div>`;
+  const summary = document.getElementById('cov-summary');
+  if (summary.nextSibling && summary.nextSibling.id === 'cov-progress') {
+    summary.nextSibling.outerHTML = progressHtml.replace('<div ', '<div id="cov-progress" ');
+  } else {
+    summary.insertAdjacentHTML('afterend', progressHtml.replace('<div ', '<div id="cov-progress" '));
+  }
+
+  // Table body
+  document.getElementById('cov-body').innerHTML = rows.length === 0
+    ? `<tr><td colspan="6" style="text-align:center;padding:40px;color:var(--muted);">No results match your filters</td></tr>`
+    : rows.map(r => {
+        const qText = getQText(r, q);
+        const status = parseStatus(qText);
+        return `<tr>
+          <td style="font-weight:500;max-width:200px;overflow:hidden;text-overflow:ellipsis;" title="${r.company}">${r.company}</td>
+          <td style="font-size:11px;">${r.country}</td>
+          <td><span style="font-family:var(--mono);font-size:11px;padding:2px 8px;background:rgba(240,180,41,0.1);border:1px solid rgba(240,180,41,0.2);border-radius:4px;color:var(--gold,#f0b429);">${r.primary || '—'}</span></td>
+          <td style="font-family:var(--mono);font-size:11px;color:var(--muted);">${r.secondary && r.secondary !== '-' ? r.secondary : '—'}</td>
+          <td style="max-width:220px;font-size:11px;color:var(--muted);overflow:hidden;text-overflow:ellipsis;white-space:nowrap;" title="${qText}">${qText || '—'}</td>
+          <td>${statusBadge(status, qText)}</td>
+        </tr>`;
+      }).join('');
+}
+
 </script>
 </body>
 </html>
