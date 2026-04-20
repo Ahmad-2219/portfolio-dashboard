@@ -6,21 +6,23 @@
 <title>Portfolio Dashboard</title>
 <script src="https://cdn.jsdelivr.net/npm/xlsx@0.18.5/dist/xlsx.full.min.js"></script>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/Chart.js/4.4.1/chart.umd.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/d3/7.8.5/d3.min.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/topojson/3.0.2/topojson.min.js"></script>
 <link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;500&family=IBM+Plex+Sans:wght@300;400;500;600&display=swap" rel="stylesheet">
 <style>
   :root {
-    --bg: #0c0f14;
-    --surface: #131720;
-    --surface2: #1a2030;
-    --border: #1e2738;
-    --accent: #00d4aa;
-    --accent2: #3b82f6;
-    --accent3: #f59e0b;
-    --text: #e2e8f0;
-    --muted: #64748b;
+    --bg: #060d1f;
+    --surface: #0c1530;
+    --surface2: #112040;
+    --border: #1a3060;
+    --accent: #f0b429;
+    --accent2: #4a90d9;
+    --accent3: #f0b429;
+    --text: #e8edf8;
+    --muted: #5a7299;
     --up: #22c55e;
     --down: #ef4444;
-    --warn: #f59e0b;
+    --warn: #f0b429;
     --font: 'IBM Plex Sans', sans-serif;
     --mono: 'IBM Plex Mono', monospace;
   }
@@ -35,8 +37,8 @@
   .topbar-right { display: flex; align-items: center; gap: 10px; }
   .btn { padding: 7px 16px; border-radius: 6px; border: 1px solid var(--border); background: var(--surface2); color: var(--text); cursor: pointer; font-family: var(--font); font-size: 12px; transition: all 0.15s; font-weight: 500; }
   .btn:hover { border-color: var(--accent); color: var(--accent); }
-  .btn-primary { background: var(--accent); color: #0c0f14; border-color: var(--accent); font-weight: 600; }
-  .btn-primary:hover { background: #00bfa0; color: #0c0f14; }
+  .btn-primary { background: var(--gold, #f0b429); color: #060d1f; border-color: var(--gold, #f0b429); font-weight: 600; }
+  .btn-primary:hover { background: #d49a20; color: #060d1f; }
   .btn-icon { display: none; }
 
   /* UPLOAD ZONE */
@@ -170,7 +172,7 @@
 
 <div class="topbar">
   <div class="topbar-left">
-    <div class="logo">PORTFOLIO DASHBOARD</div>
+    <div style="display:flex;align-items:center;gap:12px;"><img src="data:image/jpeg;base64,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" style="height:36px;width:auto;object-fit:contain;" alt="RIMCO"><div style="width:1px;height:28px;background:var(--border);"></div><div style="font-family:var(--mono);font-size:11px;color:var(--muted);letter-spacing:1.5px;">INVESTMENT MONITOR</div></div>
     <div class="last-refresh" id="last-refresh">No file loaded</div>
   </div>
   <div class="topbar-right">
@@ -239,6 +241,12 @@
       <div class="card" style="margin-bottom:20px;">
         <div class="card-title">Performance Snapshot — YTD Change (%)</div>
         <div class="chart-wrap" style="height:280px;"><canvas id="perfChart" role="img" aria-label="YTD performance chart"></canvas></div>
+      </div>
+
+      <div class="card" style="margin-bottom:20px;">
+        <div class="card-title">Geographic Allocation</div>
+        <div id="world-map-container" style="position:relative;width:100%;height:320px;"></div>
+        <div id="map-legend" style="display:flex;flex-wrap:wrap;gap:8px;margin-top:12px;"></div>
       </div>
     </div>
 
@@ -473,10 +481,121 @@ function fmtDate(v) {
   return String(v);
 }
 
+
+// ── WORLD MAP ──────────────────────────────────────────────────────────────
+const COUNTRY_MAP = {
+  'Egypt': 'Egypt', 'UAE': 'United Arab Emirates', 'Jordan': 'Jordan',
+  'China': 'China', 'Lebanon': 'Lebanon', 'Nigeria': 'Nigeria',
+  'Ireland': 'Ireland', 'UK': 'United Kingdom', 'US': 'United States of America',
+  'Saudi': 'Saudi Arabia', 'India': 'India'
+};
+
+function renderMap() {
+  const container = document.getElementById('world-map-container');
+  if (!container) return;
+  container.innerHTML = '<div style="display:flex;align-items:center;justify-content:center;height:100%;color:var(--muted);font-size:12px;">Loading map...</div>';
+
+  // Compute country values
+  const byCountry = {};
+  portfolio.forEach(s => { byCountry[s.country] = (byCountry[s.country] || 0) + (s.inv_value || 0); });
+  const total = Object.values(byCountry).reduce((a,b) => a+b, 0);
+  const maxVal = Math.max(...Object.values(byCountry));
+
+  // Color scale: navy to gold
+  const colorScale = d3.scaleSequential()
+    .domain([0, maxVal])
+    .interpolator(d3.interpolate('#0c1530', '#f0b429'));
+
+  const width = container.offsetWidth || 800;
+  const height = 320;
+
+  d3.select(container).selectAll('*').remove();
+
+  const svg = d3.select(container)
+    .append('svg')
+    .attr('width', '100%')
+    .attr('height', height)
+    .attr('viewBox', `0 0 ${width} ${height}`);
+
+  const projection = d3.geoNaturalEarth1()
+    .scale(width / 6.5)
+    .translate([width / 2, height / 1.8]);
+
+  const path = d3.geoPath().projection(projection);
+
+  // Tooltip
+  const tooltip = d3.select(container)
+    .append('div')
+    .style('position', 'absolute')
+    .style('background', '#0c1530')
+    .style('border', '1px solid #1a3060')
+    .style('border-radius', '6px')
+    .style('padding', '8px 12px')
+    .style('font-size', '11px')
+    .style('font-family', 'IBM Plex Mono, monospace')
+    .style('color', '#e8edf8')
+    .style('pointer-events', 'none')
+    .style('opacity', 0)
+    .style('z-index', 50);
+
+  d3.json('https://cdn.jsdelivr.net/npm/world-atlas@2/countries-110m.json').then(world => {
+    const countries = topojson.feature(world, world.objects.countries);
+    const nameMap = {};
+    // Build name lookup using country id to name from a known source
+    // We'll match by checking our COUNTRY_MAP values against feature names
+    svg.selectAll('.country')
+      .data(countries.features)
+      .join('path')
+      .attr('class', 'country')
+      .attr('d', path)
+      .attr('fill', d => {
+        const name = d.properties.name;
+        const ourKey = Object.keys(COUNTRY_MAP).find(k => COUNTRY_MAP[k] === name);
+        if (ourKey && byCountry[ourKey]) return colorScale(byCountry[ourKey]);
+        return '#1a3060';
+      })
+      .attr('stroke', '#0c1530')
+      .attr('stroke-width', 0.4)
+      .on('mousemove', (event, d) => {
+        const name = d.properties.name;
+        const ourKey = Object.keys(COUNTRY_MAP).find(k => COUNTRY_MAP[k] === name);
+        if (ourKey && byCountry[ourKey]) {
+          const val = byCountry[ourKey];
+          const pct = (val/total*100).toFixed(1);
+          const stocks = portfolio.filter(s => s.country === ourKey).length;
+          tooltip
+            .style('opacity', 1)
+            .style('left', (event.offsetX + 10) + 'px')
+            .style('top', (event.offsetY - 10) + 'px')
+            .html(`<strong style="color:#f0b429">${ourKey}</strong><br>$${(val/1e6).toFixed(1)}M · ${pct}%<br>${stocks} positions`);
+        }
+      })
+      .on('mouseleave', () => tooltip.style('opacity', 0));
+
+    // Legend
+    const legend = document.getElementById('map-legend');
+    if (legend) {
+      const sorted = Object.entries(byCountry).sort((a,b) => b[1]-a[1]);
+      legend.innerHTML = sorted.map(([country, val]) => {
+        const pct = (val/total*100).toFixed(1);
+        const color = colorScale(val);
+        return `<div style="display:flex;align-items:center;gap:6px;font-size:10px;font-family:IBM Plex Mono,monospace;color:var(--text);">
+          <div style="width:10px;height:10px;border-radius:2px;background:${color};flex-shrink:0;"></div>
+          <span>${country}</span>
+          <span style="color:var(--muted)">${pct}%</span>
+        </div>`;
+      }).join('');
+    }
+  }).catch(() => {
+    container.innerHTML = '<div style="display:flex;align-items:center;justify-content:center;height:100%;color:var(--muted);font-size:12px;">Map unavailable offline</div>';
+  });
+}
+
 // ── RENDER ALL ─────────────────────────────────────────────────────────────
 function renderAll() {
   renderKPIs();
   renderCharts();
+  renderMap();
   renderTable();
   renderAGM();
   renderOutlookSummary();
