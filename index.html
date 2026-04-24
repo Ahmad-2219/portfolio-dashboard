@@ -217,8 +217,9 @@
     <div class="tabs">
       <div class="tab active" onclick="switchTab('overview')">Overview</div>
       <div class="tab" onclick="switchTab('holdings')">Holdings</div>
+      <div class="tab" onclick="switchTab('volume')">Volume Monitor</div>
+      <div class="tab" onclick="switchTab('board')">Board Elections</div>
       <div class="tab" onclick="switchTab('agm')">AGM Calendar</div>
-      <div class="tab" onclick="switchTab('coverage')">Coverage Tracker</div>
     </div>
 
     <!-- OVERVIEW TAB -->
@@ -269,6 +270,7 @@
         <select class="filter-select" id="filter-col" onchange="filterTable()">
           <option value="all">All Columns</option>
           <option value="price">Price & Performance</option>
+          <option value="volume">Volume & Liquidity</option>
           <option value="valuation">Valuation</option>
           <option value="fundamentals">Fundamentals</option>
         </select>
@@ -284,64 +286,43 @@
       </div>
     </div>
 
-    <!-- AGM TAB -->
-    <div id="tab-agm" class="tab-content">
-      <div id="agm-content"></div>
-    </div>
-    <!-- COVERAGE TAB -->
-    <div id="tab-coverage" class="tab-content">
-      <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:16px;flex-wrap:wrap;gap:10px;">
-        <div style="display:flex;gap:10px;flex-wrap:wrap;">
-          <input class="search-box" id="cov-search" placeholder="Search company, analyst, country..." oninput="filterCoverage()" style="width:260px;">
-          <select class="filter-select" id="cov-quarter" onchange="filterCoverage()">
-            <option value="1Q26">1Q26</option>
-            <option value="4Q25">4Q25</option>
-            <option value="3Q25">3Q25</option>
-            <option value="2Q25">2Q25</option>
-          </select>
-          <select class="filter-select" id="cov-analyst" onchange="filterCoverage()"><option value="">All Analysts</option></select>
-          <select class="filter-select" id="cov-country" onchange="filterCoverage()"><option value="">All Countries</option></select>
-          <select class="filter-select" id="cov-status" onchange="filterCoverage()">
-            <option value="">All Status</option>
-            <option value="done">Done</option>
-            <option value="pending">Pending</option>
-            <option value="results_out">Results Out</option>
-            <option value="out_of_coverage">Out of Coverage</option>
-            <option value="not_started">Not Started</option>
-          </select>
-        </div>
-        <div style="display:flex;gap:10px;align-items:center;">
-          <button class="btn" onclick="document.getElementById('file-input-coverage').click()">↑ Upload Coverage</button>
-          <input type="file" id="file-input-coverage" accept=".xlsx,.xls" onchange="loadCoverage(event)" style="display:none">
-          <span id="cov-count" style="font-size:11px;font-family:var(--mono);color:var(--muted);"></span>
-        </div>
+    <!-- VOLUME TAB -->
+    <div id="tab-volume" class="tab-content">
+      <div class="controls-row">
+        <input class="search-box" id="vol-search" placeholder="Search name, country..." oninput="filterVolume()" style="width:220px;">
+        <select class="filter-select" id="vol-country" onchange="filterVolume()"><option value="">All Countries</option></select>
+        <select class="filter-select" id="vol-sort" onchange="filterVolume()">
+          <option value="vol_vs_avg">Sort: Vol/30D Avg</option>
+          <option value="vol_value_mktcap">Sort: Val/MktCap %</option>
+          <option value="vol_daily">Sort: Daily Volume</option>
+        </select>
+        <span class="count-badge" id="vol-count"></span>
       </div>
-
-      <!-- Progress summary cards -->
-      <div id="cov-summary" style="display:grid;grid-template-columns:repeat(5,1fr);gap:12px;margin-bottom:20px;"></div>
-
-      <!-- Coverage table -->
       <div class="table-wrap">
         <div class="table-scroll">
           <table>
-            <thead>
-              <tr>
-                <th>Company</th>
-                <th>Country</th>
-                <th>Primary</th>
-                <th>Secondary</th>
-                <th id="cov-qhead">Quarter Status</th>
-                <th>Status</th>
-              </tr>
-            </thead>
-            <tbody id="cov-body">
-              <tr><td colspan="6" style="text-align:center;padding:40px;color:var(--muted);">
-                Upload your Coverage Excel file using the button above
-              </td></tr>
-            </tbody>
+            <thead><tr>
+              <th>Company</th><th>Country</th><th>Sector</th>
+              <th>Last Price</th>
+              <th>Vol (1D)</th><th>Vol (5D Avg)</th><th>Vol (30D Avg)</th>
+              <th>1D / 30D Avg</th>
+              <th>Daily Value / MktCap</th>
+              <th>Mkt Cap</th>
+            </tr></thead>
+            <tbody id="vol-body"></tbody>
           </table>
         </div>
       </div>
+    </div>
+
+    <!-- BOARD ELECTIONS TAB -->
+    <div id="tab-board" class="tab-content">
+      <div id="board-content"></div>
+    </div>
+
+    <!-- AGM TAB -->
+    <div id="tab-agm" class="tab-content">
+      <div id="agm-content"></div>
     </div>
 
   </div>
@@ -377,8 +358,12 @@
         </select>
       </div>
       <div class="modal-field">
+        <label>Board Election Date</label>
+        <input type="date" id="modal-board-election">
+      </div>
+      <div class="modal-field">
         <label>AGM Date</label>
-        <input type="date" id="modal-agm">
+        <input type="date" id="modal-agm-date">
       </div>
       <div class="modal-field">
         <label>Target Price</label>
@@ -656,9 +641,12 @@ function renderAll() {
   renderCharts();
   renderMap();
   renderTable();
-  renderAGM();
+  renderVolumeTable();
+  renderBoardElections();
+  renderAGMs();
   renderOutlookSummary();
   populateFilters();
+  populateVolumeFilters();
 }
 
 // ── KPIs ───────────────────────────────────────────────────────────────────
@@ -783,8 +771,10 @@ function renderOutlookSummary() {
 
 // ── TABLE ──────────────────────────────────────────────────────────────────
 const COL_SETS = {
-  all: ['name','country','sector','inv_value','ytd_chg','daily_chg','mtd_chg','52wk','pe_curr','ev_ebitda','pb','dy','roe','outlook','agm','notes'],
-  price: ['name','country','last_price','daily_chg','weekly_chg','mtd_chg','ytd_chg','52wk','vol_daily','outlook','agm'],
+  all: ['name','country','sector','inv_value','ytd_chg','daily_chg','mtd_chg','52wk','pe_curr','ev_ebitda','pb','dy','roe','outlook','board_election','agm_date','notes'],
+  price: ['name','country','last_price','daily_chg','weekly_chg','mtd_chg','ytd_chg','52wk','vol_daily','vol_vs_avg','vol_value_mktcap','outlook','board_election'],
+  valuation: ['name','country','sector','pe_curr','pe_next','ev_ebitda','ev_ebitda_next','pb','dy','mkt_cap','outlook'],
+  volume: ['name','country','last_price','vol_daily','vol_5d','vol_20d','vol_vs_avg','vol_value_mktcap','mkt_cap','outlook'],
   valuation: ['name','country','sector','pe_curr','pe_next','ev_ebitda','ev_ebitda_next','pb','dy','mkt_cap','outlook'],
   fundamentals: ['name','country','sector','eps_ttm','eps_next','roe','roic_wacc','bvps','mkt_cap','outlook','notes']
 };
@@ -800,7 +790,9 @@ const COL_DEF = {
   mtd_chg:    { label: 'MTD %', sort: 'mtd_chg' },
   ytd_chg:    { label: 'YTD %', sort: 'ytd_chg' },
   '52wk':     { label: '52Wk Range', sort: 'wk52_range' },
-  vol_daily:  { label: 'Vol (1D)', sort: 'vol_daily' },
+  vol_daily:      { label: 'Vol (1D)', sort: 'vol_daily' },
+  vol_vs_avg:     { label: 'Vol/30D Avg', sort: 'vol_vs_20d' },
+  vol_value_mktcap: { label: 'Val/MktCap %', sort: 'vol_value_mktcap' },
   pe_curr:    { label: 'P/E (TTM)', sort: 'pe_curr' },
   pe_next:    { label: 'P/E (Fwd)', sort: 'pe_next' },
   ev_ebitda:  { label: 'EV/EBITDA', sort: 'ev_ebitda' },
@@ -814,7 +806,8 @@ const COL_DEF = {
   roic_wacc:  { label: 'ROIC/WACC', sort: 'roic_wacc' },
   bvps:       { label: 'BVPS', sort: 'bvps' },
   outlook:    { label: 'Outlook', sort: null },
-  agm:        { label: 'AGM Date', sort: null },
+  board_election: { label: 'Board Election', sort: null },
+  agm_date:       { label: 'AGM Date', sort: null },
   notes:      { label: 'Notes', sort: null },
 };
 
@@ -875,6 +868,19 @@ function cellHTML(col, s, m) {
     case 'ytd_chg': return pctCell(s.ytd_chg);
     case '52wk': return rangeBar(s.wk52_range, s.wk52_low, s.wk52_high);
     case 'vol_daily': return s.vol_daily ? `<span class="mono" style="font-size:10px;">${fmtVol(s.vol_daily)}</span>` : '—';
+    case 'vol_vs_avg': {
+      const ratio = s.vol_20d ? (s.vol_daily / s.vol_20d) : null;
+      if (!ratio) return '—';
+      const color = ratio >= 2 ? 'var(--up)' : ratio >= 1 ? 'var(--accent)' : 'var(--muted)';
+      return `<span class="mono" style="font-size:11px;color:${color};">${ratio.toFixed(2)}x</span>`;
+    }
+    case 'vol_value_mktcap': {
+      const dailyVal = s.last_price && s.vol_daily ? s.last_price * s.vol_daily : null;
+      const pct = dailyVal && s.mkt_cap ? (dailyVal / s.mkt_cap * 100) : null;
+      if (!pct) return '—';
+      const color = pct >= 1 ? 'var(--up)' : pct >= 0.3 ? 'var(--accent)' : 'var(--muted)';
+      return `<span class="mono" style="font-size:11px;color:${color};">${pct.toFixed(3)}%</span>`;
+    }
     case 'pe_curr': return valCell(s.pe_curr, 'x');
     case 'pe_next': return valCell(s.pe_next, 'x');
     case 'ev_ebitda': return valCell(s.ev_ebitda, 'x');
@@ -888,7 +894,8 @@ function cellHTML(col, s, m) {
     case 'roic_wacc': return s.roic_wacc ? `<span class="mono" style="${s.roic_wacc >= 1 ? 'color:var(--up)' : 'color:var(--down)'}">${s.roic_wacc.toFixed(2)}x</span>` : '—';
     case 'bvps': return valCell(s.bvps, '');
     case 'outlook': return outlookCell(s.ric, m.outlook);
-    case 'agm': return agmCell(s.ric, m.agm);
+    case 'board_election': return boardElectionCell(s.ric, m.board_election);
+    case 'agm_date': return agmDateCell(s.ric, m.agm_date);
     case 'notes': return `<div class="notes-cell" onclick="openModal('${s.ric}')" title="${(m.notes||'').replace(/"/g,'&quot;')}">${m.notes ? m.notes.substring(0,40) + (m.notes.length > 40 ? '…' : '') : '<span style="opacity:0.3;">+ Add</span>'}</div>`;
     default: return '—';
   }
@@ -920,9 +927,13 @@ function outlookCell(ric, outlook) {
   </select>`;
 }
 
-function agmCell(ric, agm) {
-  const val = agm || '';
-  return `<input type="date" class="agm-input ${val ? 'has-date' : ''}" value="${val}" onchange="setAGM('${ric}', this.value)" onclick="event.stopPropagation()" title="AGM Date">`;
+function boardElectionCell(ric, date) {
+  const val = date || '';
+  return `<input type="date" class="agm-input ${val ? 'has-date' : ''}" value="${val}" onchange="setBoardElection('${ric}', this.value)" onclick="event.stopPropagation()" title="Board Election Date">`;
+}
+function agmDateCell(ric, date) {
+  const val = date || '';
+  return `<input type="date" class="agm-input ${val ? 'has-date' : ''}" value="${val}" onchange="setAGMDate('${ric}', this.value)" onclick="event.stopPropagation()" title="AGM Date">`;
 }
 
 // ── SORTING & FILTERING ────────────────────────────────────────────────────
@@ -944,12 +955,12 @@ function populateFilters() {
 }
 
 // ── AGM CALENDAR ───────────────────────────────────────────────────────────
-function renderAGM() {
+function renderAGMs() {
   const today = new Date();
   const agms = portfolio
     .map(s => {
       const m = manualData[s.ric] || {};
-      return { ...s, agm: m.agm || null, outlook: m.outlook || '' };
+      return { ...s, agm: m.agm_date || null, outlook: m.outlook || '' };
     })
     .filter(s => s.agm)
     .map(s => ({ ...s, agmDate: new Date(s.agm) }))
@@ -1013,13 +1024,19 @@ function setOutlook(ric, val) {
   sel.className = 'outlook-select ' + (val || '');
 }
 
-function setAGM(ric, val) {
+function setBoardElection(ric, val) {
   if (!manualData[ric]) manualData[ric] = {};
-  manualData[ric].agm = val;
+  manualData[ric].board_election = val;
   saveManual();
-  const inp = event.target;
-  inp.className = 'agm-input ' + (val ? 'has-date' : '');
-  renderAGM();
+  event.target.className = 'agm-input ' + (val ? 'has-date' : '');
+  renderBoardElections();
+}
+function setAGMDate(ric, val) {
+  if (!manualData[ric]) manualData[ric] = {};
+  manualData[ric].agm_date = val;
+  saveManual();
+  event.target.className = 'agm-input ' + (val ? 'has-date' : '');
+  renderAGMs();
 }
 
 function saveManual() {
@@ -1044,12 +1061,16 @@ function openModal(ric) {
   document.getElementById('modal-ric').textContent = s.ric + ' · ' + s.country + ' · ' + s.sector;
   document.getElementById('modal-outlook').value = m.outlook || '';
   document.getElementById('modal-prev-outlook').value = m.prev_outlook || '';
-  document.getElementById('modal-agm').value = m.agm || '';
+  document.getElementById('modal-board-election').value = m.board_election || '';
+  document.getElementById('modal-agm-date').value = m.agm_date || '';
   document.getElementById('modal-notes').value = m.notes || '';
   document.getElementById('modal-risks').value = m.risks || '';
   document.getElementById('modal-catalysts').value = m.catalysts || '';
   document.getElementById('modal-target').value = m.target || '';
   document.getElementById('modal-conviction').value = m.conviction || '';
+
+
+
   document.getElementById('modal').classList.add('active');
 }
 
@@ -1063,12 +1084,16 @@ function saveModal() {
   if (!manualData[currentModalRic]) manualData[currentModalRic] = {};
   manualData[currentModalRic].outlook = document.getElementById('modal-outlook').value;
   manualData[currentModalRic].prev_outlook = document.getElementById('modal-prev-outlook').value;
-  manualData[currentModalRic].agm = document.getElementById('modal-agm').value;
+  manualData[currentModalRic].board_election = document.getElementById('modal-board-election').value;
+  manualData[currentModalRic].agm_date = document.getElementById('modal-agm-date').value;
   manualData[currentModalRic].notes = document.getElementById('modal-notes').value;
   manualData[currentModalRic].risks = document.getElementById('modal-risks').value;
   manualData[currentModalRic].catalysts = document.getElementById('modal-catalysts').value;
   manualData[currentModalRic].target = document.getElementById('modal-target').value;
   manualData[currentModalRic].conviction = document.getElementById('modal-conviction').value;
+
+
+
   saveManual();
   closeModal();
   renderTable();
@@ -1078,48 +1103,13 @@ function saveModal() {
 
 // ── TABS ───────────────────────────────────────────────────────────────────
 function switchTab(tab) {
-  const tabs = ['overview','holdings','agm','coverage'];
+  const tabs = ['overview','holdings','volume','board','agm'];
   document.querySelectorAll('.tab').forEach((t,i) => t.classList.toggle('active', tabs[i] === tab));
   document.querySelectorAll('.tab-content').forEach(c => c.classList.remove('active'));
   document.getElementById('tab-' + tab).classList.add('active');
 }
 
-// ── COVERAGE TRACKER ───────────────────────────────────────────────────────
-let coverageData = [];
-const QUARTERS = ['2Q25','3Q25','4Q25','1Q26'];
-const Q_COL = { '2Q25': 5, '3Q25': 6, '4Q25': 7, '1Q26': 8 }; // 0-indexed
 
-function loadCoverage(e) {
-  const file = e.target.files[0];
-  if (!file) return;
-  const reader = new FileReader();
-  reader.onload = function(ev) {
-    try {
-      const wb = XLSX.read(ev.target.result, { type: 'binary' });
-      const ws = wb.Sheets['Coverage'];
-      if (!ws) { alert('Sheet "Coverage" not found.'); return; }
-      const rows = XLSX.utils.sheet_to_json(ws, { header: 1, defval: null });
-      coverageData = [];
-      for (let i = 3; i < rows.length; i++) {
-        const r = rows[i];
-        if (!r[2]) continue; // no company name
-        coverageData.push({
-          country: r[1] || '',
-          company: r[2] || '',
-          primary: r[3] || '',
-          secondary: r[4] || '',
-          q2_25: r[5] || '',
-          q3_25: r[6] || '',
-          q4_25: r[7] || '',
-          q1_26: r[8] || '',
-        });
-      }
-      populateCoverageFilters();
-      renderCoverage();
-    } catch(err) { alert('Error: ' + err.message); }
-  };
-  reader.readAsBinaryString(file);
-}
 
 function parseStatus(text) {
   if (!text || text === '-' || text === '') return 'not_started';
@@ -1158,96 +1148,6 @@ function populateCoverageFilters() {
   document.getElementById('cov-country').innerHTML = '<option value="">All Countries</option>' + countries.map(c => `<option>${c}</option>`).join('');
 }
 
-function filterCoverage() { renderCoverage(); }
-
-function renderCoverage() {
-  const q = document.getElementById('cov-quarter')?.value || '1Q26';
-  const search = (document.getElementById('cov-search')?.value || '').toLowerCase();
-  const fAnalyst = document.getElementById('cov-analyst')?.value || '';
-  const fCountry = document.getElementById('cov-country')?.value || '';
-  const fStatus = document.getElementById('cov-status')?.value || '';
-
-  document.getElementById('cov-qhead').textContent = q + ' Status';
-
-  let rows = coverageData.filter(r => {
-    const qText = getQText(r, q);
-    const status = parseStatus(qText);
-    if (fAnalyst && r.primary !== fAnalyst && r.secondary !== fAnalyst) return false;
-    if (fCountry && r.country !== fCountry) return false;
-    if (fStatus && status !== fStatus) return false;
-    if (search && !r.company.toLowerCase().includes(search) && !r.country.toLowerCase().includes(search) && !(r.primary||'').toLowerCase().includes(search)) return false;
-    return true;
-  });
-
-  document.getElementById('cov-count').textContent = rows.length + ' companies';
-
-  // Summary cards
-  const allForQ = coverageData.map(r => parseStatus(getQText(r, q)));
-  const counts = {
-    done: allForQ.filter(s => s === 'done').length,
-    pending: allForQ.filter(s => s === 'pending').length,
-    results_out: allForQ.filter(s => s === 'results_out').length,
-    not_started: allForQ.filter(s => s === 'not_started').length,
-    out_of_coverage: allForQ.filter(s => s === 'out_of_coverage').length,
-  };
-  const total = coverageData.length;
-  const donePct = total ? Math.round(counts.done / total * 100) : 0;
-
-  document.getElementById('cov-summary').innerHTML = `
-    <div class="kpi" style="border-color:rgba(34,197,94,0.3);">
-      <div class="kpi-label">Done</div>
-      <div class="kpi-value up">${counts.done}</div>
-      <div class="kpi-sub">${donePct}% complete</div>
-    </div>
-    <div class="kpi" style="border-color:rgba(74,144,217,0.3);">
-      <div class="kpi-label">Results Out</div>
-      <div class="kpi-value" style="color:var(--accent2)">${counts.results_out}</div>
-      <div class="kpi-sub">Awaiting note</div>
-    </div>
-    <div class="kpi" style="border-color:rgba(245,158,11,0.3);">
-      <div class="kpi-label">Pending</div>
-      <div class="kpi-value warn" style="color:var(--warn)">${counts.pending}</div>
-      <div class="kpi-sub">In progress</div>
-    </div>
-    <div class="kpi">
-      <div class="kpi-label">Not Started</div>
-      <div class="kpi-value" style="color:var(--muted)">${counts.not_started}</div>
-      <div class="kpi-sub">No results yet</div>
-    </div>
-    <div class="kpi">
-      <div class="kpi-label">Out of Coverage</div>
-      <div class="kpi-value" style="color:var(--muted)">${counts.out_of_coverage}</div>
-      <div class="kpi-sub">Dropped</div>
-    </div>`;
-
-  // Progress bar
-  const progressHtml = `
-    <div style="height:4px;background:var(--border);border-radius:2px;margin-bottom:20px;overflow:hidden;">
-      <div style="height:100%;width:${donePct}%;background:var(--up);border-radius:2px;transition:width 0.5s;"></div>
-    </div>`;
-  const summary = document.getElementById('cov-summary');
-  if (summary.nextSibling && summary.nextSibling.id === 'cov-progress') {
-    summary.nextSibling.outerHTML = progressHtml.replace('<div ', '<div id="cov-progress" ');
-  } else {
-    summary.insertAdjacentHTML('afterend', progressHtml.replace('<div ', '<div id="cov-progress" '));
-  }
-
-  // Table body
-  document.getElementById('cov-body').innerHTML = rows.length === 0
-    ? `<tr><td colspan="6" style="text-align:center;padding:40px;color:var(--muted);">No results match your filters</td></tr>`
-    : rows.map(r => {
-        const qText = getQText(r, q);
-        const status = parseStatus(qText);
-        return `<tr>
-          <td style="font-weight:500;max-width:200px;overflow:hidden;text-overflow:ellipsis;" title="${r.company}">${r.company}</td>
-          <td style="font-size:11px;">${r.country}</td>
-          <td><span style="font-family:var(--mono);font-size:11px;padding:2px 8px;background:rgba(240,180,41,0.1);border:1px solid rgba(240,180,41,0.2);border-radius:4px;color:var(--gold,#f0b429);">${r.primary || '—'}</span></td>
-          <td style="font-family:var(--mono);font-size:11px;color:var(--muted);">${r.secondary && r.secondary !== '-' ? r.secondary : '—'}</td>
-          <td style="max-width:220px;font-size:11px;color:var(--muted);overflow:hidden;text-overflow:ellipsis;white-space:nowrap;" title="${qText}">${qText || '—'}</td>
-          <td>${statusBadge(status, qText)}</td>
-        </tr>`;
-      }).join('');
-}
 
 
 // ── PDF REPORT ─────────────────────────────────────────────────────────────
@@ -1580,6 +1480,281 @@ function generatePDF() {
   const dateStr = now.toLocaleDateString('en-GB').replace(/\//g,'-');
   doc.save('RIMCO_Portfolio_Report_' + dateStr + '.pdf');
 }
+
+
+// ── VOLUME MONITOR ─────────────────────────────────────────────────────────
+function populateVolumeFilters() {
+  const countries = [...new Set(portfolio.map(x => x.country))].sort();
+  const vc = document.getElementById('vol-country');
+  if (vc) vc.innerHTML = '<option value="">All Countries</option>' + countries.map(c => `<option>${c}</option>`).join('');
+}
+
+function filterVolume() { renderVolumeTable(); }
+
+function renderVolumeTable() {
+  const search = (document.getElementById('vol-search')?.value || '').toLowerCase();
+  const fCountry = document.getElementById('vol-country')?.value || '';
+  const sortBy = document.getElementById('vol-sort')?.value || 'vol_vs_avg';
+
+  let rows = portfolio.filter(s => {
+    if (fCountry && s.country !== fCountry) return false;
+    if (search && !s.name.toLowerCase().includes(search) && !s.country.toLowerCase().includes(search)) return false;
+    return true;
+  }).map(s => {
+    const ratio = s.vol_20d ? (s.vol_daily / s.vol_20d) : null;
+    const dailyVal = s.last_price && s.vol_daily ? s.last_price * s.vol_daily : null;
+    const valPct = dailyVal && s.mkt_cap ? (dailyVal / s.mkt_cap * 100) : null;
+    return { ...s, vol_vs_avg: ratio, vol_value_mktcap: valPct };
+  }).sort((a, b) => {
+    const av = a[sortBy], bv = b[sortBy];
+    if (av === null || av === undefined) return 1;
+    if (bv === null || bv === undefined) return -1;
+    return bv - av;
+  });
+
+  document.getElementById('vol-count').textContent = rows.length + ' positions';
+
+  const tbody = document.getElementById('vol-body');
+  if (!tbody) return;
+
+  tbody.innerHTML = rows.map((s, idx) => {
+    const ratio = s.vol_vs_avg;
+    const valPct = s.vol_value_mktcap;
+    const ratioColor = ratio >= 2 ? 'var(--up)' : ratio >= 1 ? 'var(--accent)' : 'var(--muted)';
+    const valColor = valPct >= 1 ? 'var(--up)' : valPct >= 0.3 ? 'var(--accent)' : 'var(--muted)';
+
+    // Vol bar width (relative to max in list)
+    const maxVol = Math.max(...rows.map(r => r.vol_daily || 0));
+    const barPct = s.vol_daily && maxVol ? (s.vol_daily / maxVol * 100) : 0;
+
+    return `<tr>
+      <td style="min-width:130px;">
+        <div style="font-weight:500;font-size:12px;">${s.name.substring(0,22)}</div>
+        <div style="font-size:10px;color:var(--muted);font-family:var(--mono);">${s.ric.split(' ')[0]}</div>
+      </td>
+      <td style="font-size:11px;">${s.country}</td>
+      <td style="font-size:10px;color:var(--muted);">${s.sector.substring(0,18)}</td>
+      <td><span class="mono">${s.last_price != null ? s.last_price.toFixed(2) : '—'}</span></td>
+      <td>
+        <div style="display:flex;flex-direction:column;gap:3px;">
+          <span class="mono" style="font-size:11px;">${s.vol_daily ? fmtVol(s.vol_daily) : '—'}</span>
+          <div style="width:80px;height:3px;background:var(--border);border-radius:2px;">
+            <div style="width:${barPct}%;height:100%;background:var(--accent2);border-radius:2px;"></div>
+          </div>
+        </div>
+      </td>
+      <td><span class="mono" style="font-size:11px;color:var(--muted);">${s.vol_5d ? fmtVol(s.vol_5d) : '—'}</span></td>
+      <td><span class="mono" style="font-size:11px;color:var(--muted);">${s.vol_20d ? fmtVol(s.vol_20d) : '—'}</span></td>
+      <td>
+        ${ratio !== null ? `
+        <div style="display:flex;align-items:center;gap:6px;">
+          <span class="mono" style="font-size:12px;font-weight:600;color:${ratioColor};">${ratio.toFixed(2)}x</span>
+          ${ratio >= 1.5 ? '<span style="font-size:9px;padding:1px 5px;background:rgba(34,197,94,0.12);color:var(--up);border-radius:3px;font-family:var(--mono);">HIGH</span>' : ''}
+        </div>` : '—'}
+      </td>
+      <td>
+        ${valPct !== null ? `<span class="mono" style="font-size:12px;font-weight:600;color:${valColor};">${valPct.toFixed(3)}%</span>` : '—'}
+      </td>
+      <td><span class="mono" style="font-size:10px;color:var(--muted);">${s.mkt_cap ? '$'+fmtBig(s.mkt_cap) : '—'}</span></td>
+    </tr>`;
+  }).join('') || '<tr><td colspan="10" style="text-align:center;padding:40px;color:var(--muted);">No data</td></tr>';
+}
+
+// ── BOARD ELECTIONS ────────────────────────────────────────────────────────
+function renderBoardElections() {
+  const today = new Date();
+  const elections = portfolio
+    .map(s => {
+      const m = manualData[s.ric] || {};
+      return { ...s, electionDate: m.board_election ? new Date(m.board_election) : null, outlook: m.outlook || '' };
+    })
+    .filter(s => s.electionDate)
+    .sort((a, b) => a.electionDate - b.electionDate);
+
+  const container = document.getElementById('board-content');
+  if (!container) return;
+
+  if (!elections.length) {
+    container.innerHTML = `<div class="no-data"><div class="icon">🗳️</div><p>No board election dates set yet.<br>Click any stock in Holdings to add a board election date.</p></div>`;
+    return;
+  }
+
+  const upcoming = elections.filter(s => s.electionDate >= today);
+  const past = elections.filter(s => s.electionDate < today).reverse();
+  const diffDays = d => Math.ceil((d - today) / (1000*60*60*24));
+
+  container.innerHTML = `
+    <div style="margin-bottom:20px;">
+      <div class="card-title">Upcoming Board Elections (${upcoming.length})</div>
+      ${upcoming.length === 0 ? '<p style="color:var(--muted);font-size:12px;margin-top:8px;">No upcoming board elections</p>' : ''}
+      <div style="display:grid;gap:10px;margin-top:10px;">
+        ${upcoming.map(s => {
+          const days = diffDays(s.electionDate);
+          const urgent = days <= 30;
+          const m = manualData[s.ric] || {};
+          return `<div style="display:flex;align-items:center;gap:16px;padding:14px 16px;background:var(--surface);border:1px solid ${urgent ? 'rgba(240,180,41,0.3)' : 'var(--border)'};border-radius:10px;cursor:pointer;" onclick="openModal('${s.ric}')">
+            <div style="min-width:70px;text-align:center;padding:8px;background:${urgent ? 'rgba(240,180,41,0.08)' : 'var(--surface2)'};border-radius:8px;">
+              <div style="font-family:var(--mono);font-size:18px;font-weight:600;color:${urgent ? 'var(--gold,#f0b429)' : 'var(--accent2)'};">${days}</div>
+              <div style="font-size:9px;color:var(--muted);text-transform:uppercase;">days</div>
+            </div>
+            <div style="flex:1;">
+              <div style="font-weight:500;font-size:13px;">${s.name}</div>
+              <div style="font-size:11px;color:var(--muted);margin-top:2px;">${s.ric.split(' ')[0]} · ${s.country} · ${s.sector}</div>
+            </div>
+            <div style="text-align:right;">
+              <div style="font-family:var(--mono);font-size:12px;color:var(--accent2);">${s.electionDate.toLocaleDateString('en-GB',{day:'numeric',month:'short',year:'numeric'})}</div>
+              ${s.outlook ? `<div class="badge ${s.outlook==='positive'?'badge-pos':s.outlook==='negative'?'badge-neg':'badge-neu'}" style="margin-top:4px;font-size:9px;">${s.outlook}</div>` : ''}
+              ${m.notes ? `<div style="font-size:10px;color:var(--muted);margin-top:3px;max-width:180px;overflow:hidden;text-overflow:ellipsis;">${m.notes.substring(0,50)}</div>` : ''}
+            </div>
+          </div>`;
+        }).join('')}
+      </div>
+    </div>
+    ${past.length ? `
+    <div>
+      <div class="card-title">Past Board Elections (${past.length})</div>
+      <div style="display:flex;flex-wrap:wrap;gap:8px;margin-top:10px;">
+        ${past.map(s => `<div style="padding:6px 12px;border-radius:6px;border:1px solid var(--border);background:var(--surface2);cursor:pointer;font-size:11px;font-family:var(--mono);color:var(--muted);" onclick="openModal('${s.ric}')">${s.name.substring(0,16)} · ${s.electionDate.toLocaleDateString('en-GB',{day:'numeric',month:'short'})}</div>`).join('')}
+      </div>
+    </div>` : ''}`;
+}
+
+// ── AGM CALENDAR (separate from Board Elections) ───────────────────────────
+function renderAGMs() {
+  const today = new Date();
+  const agms = portfolio
+    .map(s => {
+      const m = manualData[s.ric] || {};
+      return { ...s, agm: m.agm_date || null, outlook: m.outlook || '' };
+    })
+    .filter(s => s.agm)
+    .map(s => ({ ...s, agmDate: new Date(s.agm) }))
+    .sort((a, b) => a.agmDate - b.agmDate);
+
+  const container = document.getElementById('agm-content');
+  if (!container) return;
+
+  if (!agms.length) {
+    container.innerHTML = `<div class="no-data"><div class="icon">📅</div><p>No AGM dates set yet.<br>Click any stock in Holdings to add an AGM date.</p></div>`;
+    return;
+  }
+
+  const upcoming = agms.filter(s => s.agmDate >= today);
+  const past = agms.filter(s => s.agmDate < today).reverse();
+  const diffDays = d => Math.ceil((d - today) / (1000*60*60*24));
+
+  container.innerHTML = `
+    <div style="margin-bottom:20px;">
+      <div class="card-title">Upcoming AGMs (${upcoming.length})</div>
+      ${upcoming.length === 0 ? '<p style="color:var(--muted);font-size:12px;margin-top:8px;">No upcoming AGMs</p>' : ''}
+      <div style="display:grid;gap:10px;margin-top:10px;">
+        ${upcoming.map(s => {
+          const days = diffDays(s.agmDate);
+          const urgent = days <= 14;
+          const m = manualData[s.ric] || {};
+          return `<div style="display:flex;align-items:center;gap:16px;padding:14px 16px;background:var(--surface);border:1px solid ${urgent ? 'rgba(240,180,41,0.3)' : 'var(--border)'};border-radius:10px;cursor:pointer;" onclick="openModal('${s.ric}')">
+            <div style="min-width:70px;text-align:center;padding:8px;background:${urgent ? 'rgba(240,180,41,0.08)' : 'var(--surface2)'};border-radius:8px;">
+              <div style="font-family:var(--mono);font-size:18px;font-weight:600;color:${urgent ? 'var(--gold,#f0b429)' : 'var(--accent2)'};">${days}</div>
+              <div style="font-size:9px;color:var(--muted);text-transform:uppercase;">days</div>
+            </div>
+            <div style="flex:1;">
+              <div style="font-weight:500;font-size:13px;">${s.name}</div>
+              <div style="font-size:11px;color:var(--muted);margin-top:2px;">${s.ric.split(' ')[0]} · ${s.country} · ${s.sector}</div>
+            </div>
+            <div style="text-align:right;">
+              <div style="font-family:var(--mono);font-size:12px;color:var(--accent2);">${s.agmDate.toLocaleDateString('en-GB',{day:'numeric',month:'short',year:'numeric'})}</div>
+              ${s.outlook ? `<div class="badge ${s.outlook==='positive'?'badge-pos':s.outlook==='negative'?'badge-neg':'badge-neu'}" style="margin-top:4px;font-size:9px;">${s.outlook}</div>` : ''}
+            </div>
+          </div>`;
+        }).join('')}
+      </div>
+    </div>
+    ${past.length ? `
+    <div>
+      <div class="card-title">Past AGMs (${past.length})</div>
+      <div style="display:flex;flex-wrap:wrap;gap:8px;margin-top:10px;">
+        ${past.map(s => `<div style="padding:6px 12px;border-radius:6px;border:1px solid var(--border);background:var(--surface2);cursor:pointer;font-size:11px;font-family:var(--mono);color:var(--muted);" onclick="openModal('${s.ric}')">${s.name.substring(0,16)} · ${s.agmDate.toLocaleDateString('en-GB',{day:'numeric',month:'short'})}</div>`).join('')}
+      </div>
+    </div>` : ''}`;
+}
+
+
+// ── VOLUME MONITOR ─────────────────────────────────────────────────────────
+function populateVolumeFilters() {
+  const countries = [...new Set(portfolio.map(x => x.country))].sort();
+  const vc = document.getElementById('vol-country');
+  if (vc) vc.innerHTML = '<option value="">All Countries</option>' + countries.map(c => `<option>${c}</option>`).join('');
+}
+
+function filterVolume() { renderVolumeTable(); }
+
+function renderVolumeTable() {
+  const search = (document.getElementById('vol-search')?.value || '').toLowerCase();
+  const fCountry = document.getElementById('vol-country')?.value || '';
+  const sortBy = document.getElementById('vol-sort')?.value || 'vol_vs_avg';
+
+  let rows = portfolio.filter(s => {
+    if (fCountry && s.country !== fCountry) return false;
+    if (search && !s.name.toLowerCase().includes(search) && !s.country.toLowerCase().includes(search)) return false;
+    return true;
+  }).map(s => {
+    const ratio = s.vol_20d ? (s.vol_daily / s.vol_20d) : null;
+    const dailyVal = s.last_price && s.vol_daily ? s.last_price * s.vol_daily : null;
+    const valPct = dailyVal && s.mkt_cap ? (dailyVal / s.mkt_cap * 100) : null;
+    return { ...s, vol_vs_avg: ratio, vol_value_mktcap: valPct };
+  }).sort((a, b) => {
+    const av = a[sortBy], bv = b[sortBy];
+    if (av === null || av === undefined) return 1;
+    if (bv === null || bv === undefined) return -1;
+    return bv - av;
+  });
+
+  document.getElementById('vol-count').textContent = rows.length + ' positions';
+
+  const tbody = document.getElementById('vol-body');
+  if (!tbody) return;
+
+  const maxVol = Math.max(...rows.map(r => r.vol_daily || 0));
+
+  tbody.innerHTML = rows.map((s) => {
+    const ratio = s.vol_vs_avg;
+    const valPct = s.vol_value_mktcap;
+    const ratioColor = ratio >= 2 ? 'var(--up)' : ratio >= 1 ? 'var(--accent)' : 'var(--muted)';
+    const valColor = valPct >= 1 ? 'var(--up)' : valPct >= 0.3 ? 'var(--accent)' : 'var(--muted)';
+    const barPct = s.vol_daily && maxVol ? (s.vol_daily / maxVol * 100) : 0;
+
+    return `<tr>
+      <td style="min-width:130px;">
+        <div style="font-weight:500;font-size:12px;">${s.name.substring(0,22)}</div>
+        <div style="font-size:10px;color:var(--muted);font-family:var(--mono);">${s.ric.split(' ')[0]}</div>
+      </td>
+      <td style="font-size:11px;">${s.country}</td>
+      <td style="font-size:10px;color:var(--muted);">${(s.sector||'').substring(0,18)}</td>
+      <td><span class="mono">${s.last_price != null ? s.last_price.toFixed(2) : '—'}</span></td>
+      <td>
+        <div style="display:flex;flex-direction:column;gap:3px;">
+          <span class="mono" style="font-size:11px;">${s.vol_daily ? fmtVol(s.vol_daily) : '—'}</span>
+          <div style="width:80px;height:3px;background:var(--border);border-radius:2px;">
+            <div style="width:${barPct}%;height:100%;background:var(--accent2);border-radius:2px;"></div>
+          </div>
+        </div>
+      </td>
+      <td><span class="mono" style="font-size:11px;color:var(--muted);">${s.vol_5d ? fmtVol(s.vol_5d) : '—'}</span></td>
+      <td><span class="mono" style="font-size:11px;color:var(--muted);">${s.vol_20d ? fmtVol(s.vol_20d) : '—'}</span></td>
+      <td>
+        ${ratio !== null ? `
+        <div style="display:flex;align-items:center;gap:6px;">
+          <span class="mono" style="font-size:12px;font-weight:600;color:${ratioColor};">${ratio.toFixed(2)}x</span>
+          ${ratio >= 1.5 ? '<span style="font-size:9px;padding:1px 5px;background:rgba(34,197,94,0.12);color:var(--up);border-radius:3px;font-family:var(--mono);">HIGH</span>' : ''}
+        </div>` : '—'}
+      </td>
+      <td>${valPct !== null ? `<span class="mono" style="font-size:12px;font-weight:600;color:${valColor};">${valPct.toFixed(3)}%</span>` : '—'}</td>
+      <td><span class="mono" style="font-size:10px;color:var(--muted);">${s.mkt_cap ? '$'+fmtBig(s.mkt_cap) : '—'}</span></td>
+    </tr>`;
+  }).join('') || '<tr><td colspan="10" style="text-align:center;padding:40px;color:var(--muted);">No data</td></tr>';
+}
+
+
 
 </script>
 </body>
